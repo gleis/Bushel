@@ -1,0 +1,225 @@
+import Foundation
+import SwiftUI
+
+@Observable
+final class ContainerViewModel {
+    var containers: [ContainerEntry] = []
+    var selectedContainerID: String?
+    var isLoading = false
+    var error: String?
+    var showError = false
+    var systemNotRunning = false
+
+    // Log streaming
+    var logLines: [String] = []
+    var isStreamingLogs = false
+    @ObservationIgnored private var logCancelFn: (@Sendable () -> Void)?
+
+    // Exec
+    var execOutput: String = ""
+    var isExecuting = false
+
+    // Periodic refresh
+    @ObservationIgnored private var refreshTask: Task<Void, Never>?
+
+    private let service = ContainerService()
+
+    var selectedContainer: ContainerEntry? {
+        containers.first { $0.id == selectedContainerID }
+    }
+
+    var runningCount: Int {
+        containers.filter { $0.status == .running }.count
+    }
+
+    var stoppedCount: Int {
+        containers.filter { $0.status == .stopped }.count
+    }
+
+    // MARK: - Container List
+
+    func loadContainers() async {
+        do {
+            containers = try await service.listAll()
+            systemNotRunning = false
+        } catch {
+            if ShellError.isSystemNotRunningError(error) {
+                systemNotRunning = true
+            } else {
+                self.error = error.localizedDescription
+                self.showError = true
+            }
+        }
+    }
+
+    func initialLoad() async {
+        isLoading = true
+        await loadContainers()
+        isLoading = false
+    }
+
+    // MARK: - Container Actions
+
+    func start(_ id: String) async {
+        do {
+            try await service.start(id)
+            await loadContainers()
+        } catch {
+            self.error = error.localizedDescription
+            self.showError = true
+        }
+    }
+
+    func stop(_ id: String) async {
+        do {
+            try await service.stop(id)
+            await loadContainers()
+        } catch {
+            self.error = error.localizedDescription
+            self.showError = true
+        }
+    }
+
+    func restart(_ id: String) async {
+        do {
+            try await service.restart(id)
+            await loadContainers()
+        } catch {
+            self.error = error.localizedDescription
+            self.showError = true
+        }
+    }
+
+    func kill(_ id: String) async {
+        do {
+            try await service.kill(id)
+            await loadContainers()
+        } catch {
+            self.error = error.localizedDescription
+            self.showError = true
+        }
+    }
+
+    func delete(_ id: String) async {
+        do {
+            try await service.delete(id)
+            if selectedContainerID == id { selectedContainerID = nil }
+            await loadContainers()
+        } catch {
+            self.error = error.localizedDescription
+            self.showError = true
+        }
+    }
+
+    func runContainer(config: RunContainerConfig) async {
+        do {
+            _ = try await service.run(config: config)
+            await loadContainers()
+        } catch {
+            self.error = error.localizedDescription
+            self.showError = true
+        }
+    }
+
+    // MARK: - Log Streaming
+
+    func startLogStream(for id: String, lines: Int? = 200) {
+        stopLogStream()
+        logLines = []
+        isStreamingLogs = true
+
+        let (stream, cancel) = service.logs(id, follow: true, lines: lines)
+        logCancelFn = cancel
+
+        Task { @MainActor [weak self] in
+            for await line in stream {
+                guard let self else { return }
+                self.logLines.append(line)
+                if self.logLines.count > 10_000 {
+                    self.logLines.removeFirst(self.logLines.count - 10_000)
+                }
+            }
+            self?.isStreamingLogs = false
+        }
+    }
+
+    func stopLogStream() {
+        logCancelFn?()
+        logCancelFn = nil
+        isStreamingLogs = false
+    }
+
+    // MARK: - Exec
+
+    func exec(_ id: String, command: String) async {
+        isExecuting = true
+        do {
+            let args = command.components(separatedBy: " ")
+            let output = try await service.exec(id, command: args)
+            execOutput += "$ \(command)\n\(output)\n"
+        } catch {
+            execOutput += "$ \(command)\nError: \(error.localizedDescription)\n"
+        }
+        isExecuting = false
+    }
+
+    func clearExecOutput() {
+        execOutput = ""
+    }
+
+    // MARK: - Interactive Terminal
+
+    var terminalSession: TerminalSession?
+    var isTerminalOpen = false
+
+    func toggleTerminal(_ id: String) {
+        if isTerminalOpen {
+            closeTerminal()
+        } else {
+            openTerminal(id)
+        }
+    }
+
+    func openTerminal(_ id: String, shell: String = "/bin/sh") {
+        closeTerminal()
+
+        let session = TerminalSession(containerID: id)
+        session.onExit = { [weak self] _ in
+            // Keep the panel open so the user can see the exit status
+            _ = self
+        }
+
+        do {
+            try session.start(shell: shell)
+            self.terminalSession = session
+            self.isTerminalOpen = true
+        } catch {
+            self.error = error.localizedDescription
+            self.showError = true
+        }
+    }
+
+    func closeTerminal() {
+        let session = terminalSession
+        terminalSession = nil
+        isTerminalOpen = false
+        session?.stop()
+    }
+
+    // MARK: - Periodic Refresh
+
+    func startPeriodicRefresh(interval: TimeInterval = 5.0) {
+        stopPeriodicRefresh()
+        refreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.loadContainers()
+                try? await Task.sleep(for: .seconds(interval))
+            }
+        }
+    }
+
+    func stopPeriodicRefresh() {
+        refreshTask?.cancel()
+        refreshTask = nil
+    }
+}

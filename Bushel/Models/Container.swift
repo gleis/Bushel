@@ -1,0 +1,289 @@
+import Foundation
+
+// MARK: - AnyCodable (type-erased Codable for opaque JSON fields)
+
+struct AnyCodable: Codable, Sendable {
+    let value: AnyCodableValue
+
+    init(value: Any) {
+        self.value = AnyCodableValue(value)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() {
+            value = .null
+        } else if let bool = try? container.decode(Bool.self) {
+            value = .bool(bool)
+        } else if let int = try? container.decode(Int.self) {
+            value = .int(int)
+        } else if let double = try? container.decode(Double.self) {
+            value = .double(double)
+        } else if let string = try? container.decode(String.self) {
+            value = .string(string)
+        } else if let array = try? container.decode([AnyCodable].self) {
+            value = .array(array)
+        } else if let dict = try? container.decode([String: AnyCodable].self) {
+            value = .dictionary(dict)
+        } else {
+            value = .null
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch value {
+        case .null: try container.encodeNil()
+        case .bool(let v): try container.encode(v)
+        case .int(let v): try container.encode(v)
+        case .double(let v): try container.encode(v)
+        case .string(let v): try container.encode(v)
+        case .array(let v): try container.encode(v)
+        case .dictionary(let v): try container.encode(v)
+        }
+    }
+}
+
+enum AnyCodableValue: Sendable {
+    case null
+    case bool(Bool)
+    case int(Int)
+    case double(Double)
+    case string(String)
+    case array([AnyCodable])
+    case dictionary([String: AnyCodable])
+
+    init(_ any: Any) {
+        switch any {
+        case let v as Bool: self = .bool(v)
+        case let v as Int: self = .int(v)
+        case let v as Double: self = .double(v)
+        case let v as String: self = .string(v)
+        case let v as [Any]: self = .array(v.map { AnyCodable(value: $0) })
+        case let v as [String: Any]: self = .dictionary(v.mapValues { AnyCodable(value: $0) })
+        default: self = .null
+        }
+    }
+}
+
+// MARK: - Container List / Inspect Models
+
+/// Top-level entry from `container list --all --format json` or `container inspect <id>`
+struct ContainerEntry: Codable, Identifiable, Sendable {
+    let configuration: ContainerConfiguration
+    let networks: [AnyCodable]
+    let status: ContainerStatus
+
+    var id: String { configuration.id }
+}
+
+enum ContainerStatus: String, Codable, Sendable {
+    case running
+    case stopped
+}
+
+struct ContainerConfiguration: Codable, Sendable {
+    let id: String
+    let image: ContainerImageRef
+    let resources: ContainerResources
+    let publishedPorts: [PublishedPort]
+    let publishedSockets: [AnyCodable]
+    let mounts: [ContainerMount]
+    let dns: ContainerDNS
+    let networks: [ContainerNetworkConfig]
+    let initProcess: InitProcess
+    let platform: Platform
+    let runtimeHandler: String
+    let ssh: Bool
+    let rosetta: Bool
+    let virtualization: Bool
+    let sysctls: [String: String]
+    let labels: [String: String]
+}
+
+struct ContainerImageRef: Codable, Sendable {
+    let reference: String
+    let descriptor: ImageDescriptor
+}
+
+struct ImageDescriptor: Codable, Sendable {
+    let digest: String
+    let size: Int64
+    let mediaType: String
+    let annotations: [String: String]?
+}
+
+struct ContainerResources: Codable, Sendable {
+    let cpus: Int
+    let memoryInBytes: Int64
+
+    var memoryFormatted: String {
+        ByteFormatter.format(memoryInBytes)
+    }
+}
+
+struct PublishedPort: Codable, Identifiable, Sendable {
+    let hostPort: Int
+    let containerPort: Int
+    let hostAddress: String
+    let proto: String
+    let count: Int
+
+    var id: String { "\(hostAddress):\(hostPort):\(containerPort)/\(proto)" }
+
+    var displayString: String {
+        "\(hostAddress):\(hostPort) → \(containerPort)/\(proto)"
+    }
+}
+
+struct ContainerMount: Codable, Identifiable, Sendable {
+    let type: MountType
+    let source: String
+    let destination: String
+    let options: [String]
+
+    var id: String { destination }
+}
+
+// MARK: - MountType (polymorphic: {"virtiofs":{}}, {"tmpfs":{}}, {"volume":{...}})
+
+enum MountType: Codable, Sendable {
+    case virtiofs
+    case tmpfs
+    case volume(VolumeMountInfo)
+    case unknown(String)
+
+    struct VolumeMountInfo: Codable, Sendable {
+        let name: String
+        let format: String?
+        let cache: AnyCodable?
+        let sync: AnyCodable?
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let dict = try container.decode([String: AnyCodable].self)
+        if dict.keys.contains("virtiofs") {
+            self = .virtiofs
+        } else if dict.keys.contains("tmpfs") {
+            self = .tmpfs
+        } else if dict["volume"] != nil {
+            let data = try JSONEncoder().encode(dict["volume"]!)
+            let info = try JSONDecoder().decode(VolumeMountInfo.self, from: data)
+            self = .volume(info)
+        } else {
+            self = .unknown(dict.keys.first ?? "unknown")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .virtiofs:
+            try container.encode(["virtiofs": [String: String]()])
+        case .tmpfs:
+            try container.encode(["tmpfs": [String: String]()])
+        case .volume(let info):
+            let data = try JSONEncoder().encode(info)
+            let dict = try JSONDecoder().decode(AnyCodable.self, from: data)
+            try container.encode(["volume": dict])
+        case .unknown(let key):
+            try container.encode([key: [String: String]()])
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .virtiofs: return "Bind Mount"
+        case .tmpfs: return "tmpfs"
+        case .volume(let info): return "Volume (\(info.name))"
+        case .unknown(let key): return key
+        }
+    }
+}
+
+struct ContainerDNS: Codable, Sendable {
+    let nameservers: [String]
+    let searchDomains: [String]
+    let options: [String]
+    let domain: String?
+}
+
+struct ContainerNetworkConfig: Codable, Sendable {
+    let network: String
+    let options: NetworkOptions
+
+    struct NetworkOptions: Codable, Sendable {
+        let hostname: String?
+    }
+}
+
+// MARK: - InitProcess and ProcessUser
+
+struct InitProcess: Codable, Sendable {
+    let executable: String
+    let arguments: [String]
+    let environment: [String]
+    let workingDirectory: String
+    let terminal: Bool
+    let user: ProcessUser
+    let supplementalGroups: [Int]
+    let rlimits: [AnyCodable]
+}
+
+/// Two variants: {"raw":{"userString":"root"}} or {"id":{"uid":0,"gid":0}}
+enum ProcessUser: Codable, Sendable {
+    case raw(userString: String)
+    case id(uid: Int, gid: Int)
+
+    private enum CodingKeys: String, CodingKey {
+        case raw, id
+    }
+
+    struct RawUser: Codable, Sendable { let userString: String }
+    struct IDUser: Codable, Sendable { let uid: Int; let gid: Int }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let raw = try? container.decode(RawUser.self, forKey: .raw) {
+            self = .raw(userString: raw.userString)
+        } else if let idUser = try? container.decode(IDUser.self, forKey: .id) {
+            self = .id(uid: idUser.uid, gid: idUser.gid)
+        } else {
+            self = .raw(userString: "unknown")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .raw(let userString):
+            try container.encode(RawUser(userString: userString), forKey: .raw)
+        case .id(let uid, let gid):
+            try container.encode(IDUser(uid: uid, gid: gid), forKey: .id)
+        }
+    }
+
+    var displayString: String {
+        switch self {
+        case .raw(let s): return s
+        case .id(let uid, let gid): return "\(uid):\(gid)"
+        }
+    }
+}
+
+struct Platform: Codable, Sendable {
+    let os: String
+    let architecture: String
+    let variant: String?
+}
+
+// MARK: - Byte Formatter Utility
+
+enum ByteFormatter {
+    static func format(_ bytes: Int64) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .binary
+        return formatter.string(fromByteCount: bytes)
+    }
+}

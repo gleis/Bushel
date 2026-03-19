@@ -77,6 +77,7 @@ struct SystemDashboardView: View {
                 Button("Refresh", systemImage: "arrow.clockwise") {
                     Task { await vm.loadAll() }
                 }
+                .help("Refresh system info")
             }
         }
         .task { await vm.loadAll() }

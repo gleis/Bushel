@@ -193,6 +193,7 @@ struct ContainerSectionView: View {
                 NavigationStack {
                     if let container = vm.selectedContainer {
                         ContainerDetailView(container: container)
+                            .id(container.id)
                     } else {
                         ContentUnavailableView(
                             "No Container Selected",

@@ -53,6 +53,7 @@ struct ContainerDetailView: View {
                     Button("Start", systemImage: "play.fill") {
                         Task { await vm.start(container.id) }
                     }
+                    .help("Start container")
                 } else {
                     Button("Shell", systemImage: "apple.terminal") {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -64,14 +65,18 @@ struct ContainerDetailView: View {
                     Button("Stop", systemImage: "stop.fill") {
                         Task { await vm.stop(container.id) }
                     }
+                    .help("Stop container")
+
                     Button("Restart", systemImage: "arrow.clockwise") {
                         Task { await vm.restart(container.id) }
                     }
+                    .help("Restart container")
                 }
 
                 Button("Delete", systemImage: "trash") {
                     showDeleteConfirmation = true
                 }
+                .help("Delete container")
             }
         }
         .confirmationDialog("Delete Container", isPresented: $showDeleteConfirmation) {
@@ -83,6 +88,8 @@ struct ContainerDetailView: View {
         }
         .onDisappear {
             vm.closeTerminal()
+            vm.stopLogStream()
+            vm.clearExecOutput()
         }
     }
 }

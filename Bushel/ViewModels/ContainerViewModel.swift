@@ -185,8 +185,14 @@ final class ContainerViewModel {
 
         let session = TerminalSession(containerID: id)
         session.onExit = { [weak self] _ in
-            // Keep the panel open so the user can see the exit status
-            _ = self
+            Task { @MainActor [weak self] in
+                // Brief delay so the user sees the prompt return before panel closes
+                try? await Task.sleep(for: .seconds(0.5))
+                guard let self else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.closeTerminal()
+                }
+            }
         }
 
         do {

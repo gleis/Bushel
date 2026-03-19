@@ -114,6 +114,8 @@ actor ShellService {
             pipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
+                    // EOF: nil ourselves before finishing so no further invocations fire.
+                    handle.readabilityHandler = nil
                     continuation.finish()
                     return
                 }
@@ -125,8 +127,11 @@ actor ShellService {
                 }
             }
 
+            // Do NOT nil readabilityHandler here — doing so races with already-queued
+            // handler invocations and can drop final output. The readabilityHandler
+            // nils itself on EOF. This call is a fallback for processes that exit
+            // without closing stdout. AsyncStream.Continuation.finish() is idempotent.
             process.terminationHandler = { _ in
-                pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.finish()
             }
 

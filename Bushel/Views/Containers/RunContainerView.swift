@@ -91,9 +91,9 @@ struct RunContainerView: View {
             arguments: argumentsText.isEmpty ? [] : argumentsText.components(separatedBy: " ")
         )
         Task {
-            await vm.runContainer(config: config)
+            let success = await vm.runContainer(config: config)
             isRunning = false
-            dismiss()
+            if success { dismiss() }
         }
     }
 }

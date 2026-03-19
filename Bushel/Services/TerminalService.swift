@@ -4,6 +4,7 @@ import Darwin
 enum TerminalError: LocalizedError {
     case forkFailed(errno: Int32)
     case sessionAlreadyRunning
+    case binaryNotFound(path: String)
 
     var errorDescription: String? {
         switch self {
@@ -11,6 +12,8 @@ enum TerminalError: LocalizedError {
             return "Failed to create terminal: \(String(cString: strerror(errno)))"
         case .sessionAlreadyRunning:
             return "A terminal session is already running"
+        case .binaryNotFound(let path):
+            return "Container binary not found at \(path)"
         }
     }
 }
@@ -21,7 +24,7 @@ final class TerminalSession {
     var isRunning = false
     var exitCode: Int32?
 
-    @ObservationIgnored var onOutput: (@Sendable (Data) -> Void)?
+    @ObservationIgnored var onOutput: (@MainActor @Sendable (Data) -> Void)?
     @ObservationIgnored var onExit: (@Sendable (Int32) -> Void)?
 
     @ObservationIgnored private var masterFD: Int32 = -1
@@ -45,6 +48,11 @@ final class TerminalSession {
     func start(shell: String = "/bin/sh") throws {
         guard !isRunning else { throw TerminalError.sessionAlreadyRunning }
 
+        let binary = "/usr/local/bin/container"
+        guard FileManager.default.isExecutableFile(atPath: binary) else {
+            throw TerminalError.binaryNotFound(path: binary)
+        }
+
         var winSize = winsize(ws_row: 24, ws_col: 80, ws_xpixel: 0, ws_ypixel: 0)
         var masterFD: Int32 = -1
 
@@ -56,7 +64,6 @@ final class TerminalSession {
 
         if pid == 0 {
             // Child process — exec into container
-            let binary = "/usr/local/bin/container"
             // Build argv for execv: program name + args + nil terminator
             let args = ["container", "exec", "-it", containerID, shell]
             let cArgs = args.map { strdup($0) } + [nil]
@@ -136,20 +143,12 @@ final class TerminalSession {
         readTask?.cancel()
         readTask = nil
 
-        // Reap the child in the background to avoid blocking the main thread
+        // Give the process a moment to exit from SIGTERM, then force-kill.
+        // The read loop is the sole owner of waitpid and will reap the child.
         if pid > 0 {
             DispatchQueue.global().async {
-                var status: Int32 = 0
-                var result = waitpid(pid, &status, WNOHANG)
-                if result == 0 {
-                    // Give it a moment then force kill
-                    usleep(100_000) // 100ms
-                    result = waitpid(pid, &status, WNOHANG)
-                    if result == 0 {
-                        Darwin.kill(pid, SIGKILL)
-                        waitpid(pid, &status, 0)
-                    }
-                }
+                usleep(100_000) // 100ms
+                Darwin.kill(pid, SIGKILL) // no-op (ESRCH) if already exited
             }
         }
     }
@@ -181,16 +180,13 @@ final class TerminalSession {
                 }
             }
 
-            // Reap child with WNOHANG — stop() may also be reaping
+            // Block until the child exits — stop() sends SIGKILL if needed,
+            // so this will return promptly. The read loop is the sole caller of
+            // waitpid for this PID to avoid double-reap races.
             var status: Int32 = 0
-            let result = waitpid(childPID, &status, WNOHANG)
-            let code: Int32
-            if result > 0 {
-                let exited = (status & 0x7f) == 0
-                code = exited ? (status >> 8) & 0xff : -1
-            } else {
-                code = -1
-            }
+            waitpid(childPID, &status, 0)
+            let exited = (status & 0x7f) == 0
+            let code: Int32 = exited ? (status >> 8) & 0xff : -1
 
             await MainActor.run { [weak self] in
                 guard let self, self.exitCode == nil else { return }

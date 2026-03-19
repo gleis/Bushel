@@ -87,12 +87,11 @@ struct ContainerLogsView: View {
             .padding(.vertical, 8)
         }
         .onAppear {
-            if isRunning {
+            // Only start if not already streaming — preserves history when switching tabs.
+            // The stream is stopped by ContainerDetailView.onDisappear when leaving the container.
+            if isRunning && !vm.isStreamingLogs {
                 vm.startLogStream(for: containerID, lines: 200)
             }
-        }
-        .onDisappear {
-            vm.stopLogStream()
         }
     }
 }

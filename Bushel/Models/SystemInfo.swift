@@ -33,6 +33,8 @@ struct DiskUsageCategory: Codable, Sendable {
 
 /// From `container stats --format json --no-stream`
 struct ContainerStats: Codable, Identifiable, Sendable {
+    /// Stable identity assigned once at decode time; never regenerates a new UUID.
+    let id: String
     let containerID: String?
     let name: String?
     let cpuPercentage: Double?
@@ -44,8 +46,6 @@ struct ContainerStats: Codable, Identifiable, Sendable {
     let blockInput: Int64?
     let blockOutput: Int64?
     let pids: Int?
-
-    var id: String { containerID ?? name ?? UUID().uuidString }
 
     enum CodingKeys: String, CodingKey {
         case containerID = "ContainerID"
@@ -59,5 +59,22 @@ struct ContainerStats: Codable, Identifiable, Sendable {
         case blockInput = "BlockIO_in"
         case blockOutput = "BlockIO_out"
         case pids = "PIDs"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        containerID       = try c.decodeIfPresent(String.self, forKey: .containerID)
+        name              = try c.decodeIfPresent(String.self, forKey: .name)
+        cpuPercentage     = try c.decodeIfPresent(Double.self, forKey: .cpuPercentage)
+        memoryUsage       = try c.decodeIfPresent(Int64.self,  forKey: .memoryUsage)
+        memoryLimit       = try c.decodeIfPresent(Int64.self,  forKey: .memoryLimit)
+        memoryPercentage  = try c.decodeIfPresent(Double.self, forKey: .memoryPercentage)
+        networkInput      = try c.decodeIfPresent(Int64.self,  forKey: .networkInput)
+        networkOutput     = try c.decodeIfPresent(Int64.self,  forKey: .networkOutput)
+        blockInput        = try c.decodeIfPresent(Int64.self,  forKey: .blockInput)
+        blockOutput       = try c.decodeIfPresent(Int64.self,  forKey: .blockOutput)
+        pids              = try c.decodeIfPresent(Int.self,    forKey: .pids)
+        // Compute once at decode time so SwiftUI identity is stable across refreshes.
+        id = containerID ?? name ?? UUID().uuidString
     }
 }

@@ -112,13 +112,16 @@ final class ContainerViewModel {
         }
     }
 
-    func runContainer(config: RunContainerConfig) async {
+    /// Returns true on success, false if an error occurred (error is set on self).
+    func runContainer(config: RunContainerConfig) async -> Bool {
         do {
             _ = try await service.run(config: config)
             await loadContainers()
+            return true
         } catch {
             self.error = error.localizedDescription
             self.showError = true
+            return false
         }
     }
 
@@ -155,7 +158,7 @@ final class ContainerViewModel {
     func exec(_ id: String, command: String) async {
         isExecuting = true
         do {
-            let args = command.components(separatedBy: " ")
+            let args = shellSplit(command)
             let output = try await service.exec(id, command: args)
             execOutput += "$ \(command)\n\(output)\n"
         } catch {
@@ -228,5 +231,39 @@ final class ContainerViewModel {
     func stopPeriodicRefresh() {
         refreshTask?.cancel()
         refreshTask = nil
+    }
+
+    // MARK: - Helpers
+
+    /// POSIX-style shell word tokenizer. Handles single/double quotes and backslash escapes.
+    private func shellSplit(_ command: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var inSingle = false
+        var inDouble = false
+        var i = command.startIndex
+
+        while i < command.endIndex {
+            let ch = command[i]
+            if inSingle {
+                if ch == "'" { inSingle = false } else { current.append(ch) }
+            } else if inDouble {
+                if ch == "\\" {
+                    let j = command.index(after: i)
+                    if j < command.endIndex { current.append(command[j]); i = j }
+                } else if ch == "\"" { inDouble = false
+                } else { current.append(ch) }
+            } else if ch == "'" { inSingle = true
+            } else if ch == "\"" { inDouble = true
+            } else if ch == "\\" {
+                let j = command.index(after: i)
+                if j < command.endIndex { current.append(command[j]); i = j }
+            } else if ch.isWhitespace {
+                if !current.isEmpty { tokens.append(current); current = "" }
+            } else { current.append(ch) }
+            i = command.index(after: i)
+        }
+        if !current.isEmpty { tokens.append(current) }
+        return tokens
     }
 }

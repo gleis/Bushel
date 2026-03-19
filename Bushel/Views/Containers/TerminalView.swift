@@ -204,11 +204,10 @@ struct TerminalTextViewRepresentable: NSViewRepresentable {
             session?.write(data)
         }
 
-        // Wire PTY output to text view
+        // Wire PTY output to text view.
+        // Typed @MainActor so the compiler enforces call-site isolation.
         session.onOutput = { [weak coordinator = context.coordinator] data in
-            MainActor.assumeIsolated {
-                coordinator?.textView?.appendOutput(data)
-            }
+            coordinator?.textView?.appendOutput(data)
         }
 
         // Flush any output that arrived before view was ready
@@ -235,6 +234,16 @@ struct TerminalTextViewRepresentable: NSViewRepresentable {
 struct TerminalView: View {
     let session: TerminalSession
     let onClose: () -> Void
+
+    private func updatePTYSize(_ size: CGSize) {
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        let charWidth = font.maximumAdvancement.width
+        let lineHeight = font.ascender + abs(font.descender) + font.leading
+        // Subtract the 4pt horizontal/vertical insets set in makeNSView.
+        let cols = max(1, Int((size.width - 8) / charWidth))
+        let rows = max(1, Int((size.height - 8) / lineHeight))
+        session.resize(cols: cols, rows: rows)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -272,7 +281,11 @@ struct TerminalView: View {
             .padding(.vertical, 4)
             .background(Color(nsColor: NSColor(white: 0.1, alpha: 1.0)))
 
-            TerminalTextViewRepresentable(session: session)
+            GeometryReader { geo in
+                TerminalTextViewRepresentable(session: session)
+                    .onAppear { updatePTYSize(geo.size) }
+                    .onChange(of: geo.size) { _, size in updatePTYSize(size) }
+            }
         }
         .background(.black)
     }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Resolve the Apple container CLI binary path from user preferences.
-var containerBinaryPath: String {
+nonisolated(unsafe) var containerBinaryPath: String {
     let path = UserDefaults.standard.string(forKey: "containerBinaryPath") ?? "/usr/local/bin/container"
     return path.isEmpty ? "/usr/local/bin/container" : path
 }

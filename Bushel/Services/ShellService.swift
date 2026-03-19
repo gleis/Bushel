@@ -1,7 +1,10 @@
 import Foundation
 
-/// Single source of truth for the Apple container CLI binary path.
-let containerBinaryPath = "/usr/local/bin/container"
+/// Resolve the Apple container CLI binary path from user preferences.
+var containerBinaryPath: String {
+    let path = UserDefaults.standard.string(forKey: "containerBinaryPath") ?? "/usr/local/bin/container"
+    return path.isEmpty ? "/usr/local/bin/container" : path
+}
 
 enum ShellError: LocalizedError {
     case commandFailed(command: String, exitCode: Int32, stderr: String)
@@ -41,7 +44,7 @@ enum ShellError: LocalizedError {
 actor ShellService {
     static let shared = ShellService()
 
-    private let binaryPath = containerBinaryPath
+    private var binaryPath: String { containerBinaryPath }
 
     /// Execute a command and return stdout as a String.
     func run(_ arguments: [String]) async throws -> String {
@@ -106,7 +109,7 @@ actor ShellService {
     /// Returns (stream, cancel). Call cancel() to terminate the process.
     nonisolated func stream(_ arguments: [String]) -> (AsyncStream<String>, cancel: @Sendable () -> Void) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: binaryPath)
+        process.executableURL = URL(fileURLWithPath: containerBinaryPath)
         process.arguments = arguments
 
         let pipe = Pipe()

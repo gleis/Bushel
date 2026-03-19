@@ -3,7 +3,6 @@ import SwiftUI
 struct ContainerDetailView: View {
     let container: ContainerEntry
     @Environment(ContainerViewModel.self) private var vm
-    @State private var selectedTab = "info"
     @State private var showDeleteConfirmation = false
     @State private var terminalHeight: CGFloat = 250
     @State private var dragOffset: CGFloat = 0
@@ -13,7 +12,7 @@ struct ContainerDetailView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TabView(selection: $selectedTab) {
+            TabView(selection: Bindable(vm).selectedDetailTab) {
                 ContainerInfoTab(container: container)
                     .tabItem { Label("Info", systemImage: "info.circle") }
                     .tag("info")

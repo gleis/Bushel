@@ -5,6 +5,7 @@ import SwiftUI
 final class ContainerViewModel {
     var containers: [ContainerEntry] = []
     var selectedContainerID: String?
+    var selectedDetailTab = "info"
     var isLoading = false
     var error: String?
     var showError = false

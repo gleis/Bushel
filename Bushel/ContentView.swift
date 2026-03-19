@@ -22,6 +22,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 struct ContentView: View {
     @State private var selectedSection: SidebarItem = .containers
+    @State private var cliVersion: String?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -49,9 +50,25 @@ struct ContentView: View {
                 .padding(.top, 8)
 
                 Spacer()
+
+                if let cliVersion {
+                    Text(cliVersion)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                }
             }
             .frame(width: 180)
             .background(.ultraThinMaterial)
+            .task {
+                do {
+                    let output = try await ShellService.shared.run(["--version"])
+                    cliVersion = output.trimmingCharacters(in: .whitespacesAndNewlines)
+                } catch {
+                    cliVersion = nil
+                }
+            }
 
             Divider()
 

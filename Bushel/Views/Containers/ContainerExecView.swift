@@ -41,7 +41,6 @@ struct ContainerExecView: View {
 
                 Button("Run") { sendCommand() }
                     .disabled(!isRunning || command.isEmpty || vm.isExecuting)
-                    .keyboardShortcut(.return, modifiers: [])
 
                 if vm.isExecuting {
                     ProgressView()

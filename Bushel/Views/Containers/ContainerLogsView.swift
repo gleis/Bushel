@@ -7,9 +7,9 @@ struct ContainerLogsView: View {
     @State private var scrollToBottom = true
     @State private var searchText = ""
 
-    private var filteredLines: [String] {
+    private var filteredLines: [(id: Int, text: String)] {
         if searchText.isEmpty { return vm.logLines }
-        return vm.logLines.filter { $0.localizedCaseInsensitiveContains(searchText) }
+        return vm.logLines.filter { $0.text.localizedCaseInsensitiveContains(searchText) }
     }
 
     var body: some View {
@@ -24,13 +24,13 @@ struct ContainerLogsView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            ForEach(Array(filteredLines.enumerated()), id: \.offset) { idx, line in
-                                Text(line)
+                            ForEach(filteredLines, id: \.id) { line in
+                                Text(line.text)
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(.green)
                                     .textSelection(.enabled)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .id(idx)
+                                    .id(line.id)
                             }
                         }
                         .padding(.horizontal, 8)
@@ -38,7 +38,7 @@ struct ContainerLogsView: View {
                     }
                     .background(.black)
                     .onChange(of: vm.logLines.count) { _, _ in
-                        if scrollToBottom, let last = filteredLines.indices.last {
+                        if scrollToBottom, let last = filteredLines.last?.id {
                             withAnimation(.none) {
                                 proxy.scrollTo(last, anchor: .bottom)
                             }

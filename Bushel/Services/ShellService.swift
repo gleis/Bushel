@@ -1,5 +1,8 @@
 import Foundation
 
+/// Single source of truth for the Apple container CLI binary path.
+let containerBinaryPath = "/usr/local/bin/container"
+
 enum ShellError: LocalizedError {
     case commandFailed(command: String, exitCode: Int32, stderr: String)
     case binaryNotFound(path: String)
@@ -38,7 +41,7 @@ enum ShellError: LocalizedError {
 actor ShellService {
     static let shared = ShellService()
 
-    private let binaryPath = "/usr/local/bin/container"
+    private let binaryPath = containerBinaryPath
 
     /// Execute a command and return stdout as a String.
     func run(_ arguments: [String]) async throws -> String {

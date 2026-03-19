@@ -74,35 +74,53 @@ class TerminalNSTextView: NSTextView {
 
     // MARK: - Terminal Output
 
-    /// Strip ANSI escape sequences from a string, returning clean text.
+    /// Strip ANSI/VT escape sequences from a string, returning clean text.
+    /// Handles CSI (ESC [), OSC (ESC ]), SS3 (ESC O), and two-character sequences.
     private func stripANSI(_ text: String) -> String {
         var result = ""
         result.reserveCapacity(text.count)
         var idx = text.startIndex
         while idx < text.endIndex {
             let ch = text[idx]
-            if ch == "\u{1B}" {
-                // ESC sequence
-                let next = text.index(after: idx)
-                if next < text.endIndex, text[next] == "[" {
-                    // CSI sequence: skip until we find a letter
-                    var j = text.index(after: next)
-                    while j < text.endIndex, !text[j].isLetter {
-                        j = text.index(after: j)
-                    }
-                    // Skip the final letter too
-                    if j < text.endIndex {
-                        idx = text.index(after: j)
-                    } else {
-                        idx = text.index(after: idx)
-                    }
-                } else {
-                    // Bare ESC or ESC + non-[ — skip just the ESC
-                    idx = text.index(after: idx)
-                }
-            } else {
+            guard ch == "\u{1B}" else {
                 result.append(ch)
                 idx = text.index(after: idx)
+                continue
+            }
+
+            let next = text.index(after: idx)
+            guard next < text.endIndex else { break }
+
+            switch text[next] {
+            case "[":
+                // CSI: ESC [ ... <letter>
+                var j = text.index(after: next)
+                while j < text.endIndex, !text[j].isLetter { j = text.index(after: j) }
+                idx = j < text.endIndex ? text.index(after: j) : text.endIndex
+
+            case "]":
+                // OSC: ESC ] ... BEL  or  ESC ] ... ESC \
+                // Used by shells to set window titles — produces garbage if not stripped.
+                var j = text.index(after: next)
+                while j < text.endIndex {
+                    if text[j] == "\u{07}" { j = text.index(after: j); break }   // BEL
+                    if text[j] == "\u{1B}" {
+                        let k = text.index(after: j)
+                        j = (k < text.endIndex && text[k] == "\\") ? text.index(after: k) : k
+                        break
+                    }
+                    j = text.index(after: j)
+                }
+                idx = j
+
+            case "O":
+                // SS3: ESC O <char> — used for F1–F4
+                let j = text.index(after: next)
+                idx = j < text.endIndex ? text.index(after: j) : text.endIndex
+
+            default:
+                // Two-character sequence: ESC + one char (e.g. ESC M = reverse index)
+                idx = text.index(after: next)
             }
         }
         return result

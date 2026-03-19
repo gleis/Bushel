@@ -160,35 +160,40 @@ enum MountType: Codable, Sendable {
         let sync: AnyCodable?
     }
 
+    /// Dynamic CodingKey for JSON objects whose keys aren't known at compile time.
+    private struct DynamicKey: CodingKey {
+        let stringValue: String
+        var intValue: Int? { nil }
+        init(_ string: String) { stringValue = string }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
     init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let dict = try container.decode([String: AnyCodable].self)
-        if dict.keys.contains("virtiofs") {
+        let container = try decoder.container(keyedBy: DynamicKey.self)
+        if container.contains(DynamicKey("virtiofs")) {
             self = .virtiofs
-        } else if dict.keys.contains("tmpfs") {
+        } else if container.contains(DynamicKey("tmpfs")) {
             self = .tmpfs
-        } else if dict["volume"] != nil {
-            let data = try JSONEncoder().encode(dict["volume"]!)
-            let info = try JSONDecoder().decode(VolumeMountInfo.self, from: data)
+        } else if container.contains(DynamicKey("volume")) {
+            let info = try container.decode(VolumeMountInfo.self, forKey: DynamicKey("volume"))
             self = .volume(info)
         } else {
-            self = .unknown(dict.keys.first ?? "unknown")
+            self = .unknown(container.allKeys.first?.stringValue ?? "unknown")
         }
     }
 
     func encode(to encoder: Encoder) throws {
-        var container = encoder.singleValueContainer()
+        var container = encoder.container(keyedBy: DynamicKey.self)
         switch self {
         case .virtiofs:
-            try container.encode(["virtiofs": [String: String]()])
+            try container.encode([String: String](), forKey: DynamicKey("virtiofs"))
         case .tmpfs:
-            try container.encode(["tmpfs": [String: String]()])
+            try container.encode([String: String](), forKey: DynamicKey("tmpfs"))
         case .volume(let info):
-            let data = try JSONEncoder().encode(info)
-            let dict = try JSONDecoder().decode(AnyCodable.self, from: data)
-            try container.encode(["volume": dict])
+            try container.encode(info, forKey: DynamicKey("volume"))
         case .unknown(let key):
-            try container.encode([key: [String: String]()])
+            try container.encode([String: String](), forKey: DynamicKey(key))
         }
     }
 

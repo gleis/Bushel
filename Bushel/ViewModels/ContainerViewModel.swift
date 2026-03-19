@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 
+@MainActor
 @Observable
 final class ContainerViewModel {
     var containers: [ContainerEntry] = []
@@ -12,9 +13,10 @@ final class ContainerViewModel {
     var systemNotRunning = false
 
     // Log streaming
-    var logLines: [String] = []
+    var logLines: [(id: Int, text: String)] = []
     var isStreamingLogs = false
     @ObservationIgnored private var logCancelFn: (@Sendable () -> Void)?
+    @ObservationIgnored private var nextLogLineID = 0
 
     // Exec
     var execOutput: String = ""
@@ -138,7 +140,8 @@ final class ContainerViewModel {
         Task { @MainActor [weak self] in
             for await line in stream {
                 guard let self else { return }
-                self.logLines.append(line)
+                self.logLines.append((id: self.nextLogLineID, text: line))
+                self.nextLogLineID += 1
                 if self.logLines.count > 10_000 {
                     self.logLines.removeFirst(self.logLines.count - 10_000)
                 }

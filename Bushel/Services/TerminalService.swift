@@ -48,7 +48,7 @@ final class TerminalSession {
     func start(shell: String = "/bin/sh") throws {
         guard !isRunning else { throw TerminalError.sessionAlreadyRunning }
 
-        let binary = "/usr/local/bin/container"
+        let binary = containerBinaryPath
         guard FileManager.default.isExecutableFile(atPath: binary) else {
             throw TerminalError.binaryNotFound(path: binary)
         }

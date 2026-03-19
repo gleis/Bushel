@@ -109,7 +109,8 @@ class TerminalNSTextView: NSTextView {
     }
 
     /// Append raw PTY output data to the text view.
-    /// The PTY handles echo and line editing; we just need to display what it sends.
+    /// The PTY handles echo and line editing. We process backspace (\b) so the
+    /// shell's "erase character" sequence (\b space \b) visually removes characters.
     func appendOutput(_ data: Data) {
         guard let storage = textStorage else { return }
         guard let raw = String(data: data, encoding: .utf8) else { return }
@@ -122,7 +123,41 @@ class TerminalNSTextView: NSTextView {
             .foregroundColor: NSColor(red: 0.2, green: 0.9, blue: 0.2, alpha: 1.0),
         ]
 
-        storage.append(NSAttributedString(string: text, attributes: attrs))
+        // Process text, handling backspace while batching printable runs for performance
+        var idx = text.startIndex
+        while idx < text.endIndex {
+            let ch = text[idx]
+            if ch == "\u{08}" {
+                // Backspace: delete the last character unless it's a newline
+                let len = storage.length
+                if len > 0 {
+                    let str = storage.string
+                    if str.last != "\n" {
+                        storage.deleteCharacters(in: NSRange(location: len - 1, length: 1))
+                    }
+                }
+                idx = text.index(after: idx)
+            } else if ch.asciiValue != nil && ch.asciiValue! < 32
+                        && ch != "\n" && ch != "\r" && ch != "\t" {
+                // Skip other control characters
+                idx = text.index(after: idx)
+            } else {
+                // Collect a run of printable characters (plus \n, \r, \t)
+                var end = text.index(after: idx)
+                while end < text.endIndex {
+                    let c = text[end]
+                    if c == "\u{08}" ||
+                       (c.asciiValue != nil && c.asciiValue! < 32
+                        && c != "\n" && c != "\r" && c != "\t") {
+                        break
+                    }
+                    end = text.index(after: end)
+                }
+                let run = String(text[idx..<end])
+                storage.append(NSAttributedString(string: run, attributes: attrs))
+                idx = end
+            }
+        }
 
         // Trim if buffer gets too large
         if storage.length > 500_000 {

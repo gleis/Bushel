@@ -119,6 +119,22 @@ struct SystemNotRunningView: View {
     }
 }
 
+struct BinaryNotFoundView: View {
+    var body: some View {
+        ContentUnavailableView {
+            Label("Container CLI Not Found", systemImage: "questionmark.folder")
+        } description: {
+            Text("The container CLI binary was not found at the configured path. Make sure it is installed and the path is correct in Settings.")
+        } actions: {
+            SettingsLink {
+                Text("Open Settings")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+    }
+}
+
 // MARK: - Container Section
 
 struct ContainerSectionView: View {
@@ -129,7 +145,10 @@ struct ContainerSectionView: View {
     var body: some View {
         @Bindable var vm = vm
 
-        if vm.systemNotRunning {
+        if vm.binaryNotFound {
+            BinaryNotFoundView()
+                .task { await vm.initialLoad() }
+        } else if vm.systemNotRunning {
             SystemNotRunningView(goToSystem: goToSystem)
                 .task { await vm.initialLoad() }
         } else {
@@ -233,7 +252,10 @@ struct ImageSectionView: View {
     var body: some View {
         @Bindable var vm = vm
 
-        if vm.systemNotRunning {
+        if vm.binaryNotFound {
+            BinaryNotFoundView()
+                .task { await vm.loadImages() }
+        } else if vm.systemNotRunning {
             SystemNotRunningView(goToSystem: goToSystem)
                 .task { await vm.loadImages() }
         } else {
@@ -347,7 +369,10 @@ struct VolumeSectionView: View {
     var body: some View {
         @Bindable var vm = vm
 
-        if vm.systemNotRunning {
+        if vm.binaryNotFound {
+            BinaryNotFoundView()
+                .task { await vm.loadVolumes() }
+        } else if vm.systemNotRunning {
             SystemNotRunningView(goToSystem: goToSystem)
                 .task { await vm.loadVolumes() }
         } else {
@@ -452,7 +477,10 @@ struct NetworkSectionView: View {
     var body: some View {
         @Bindable var vm = vm
 
-        if vm.systemNotRunning {
+        if vm.binaryNotFound {
+            BinaryNotFoundView()
+                .task { await vm.loadNetworks() }
+        } else if vm.systemNotRunning {
             SystemNotRunningView(goToSystem: goToSystem)
                 .task { await vm.loadNetworks() }
         } else {

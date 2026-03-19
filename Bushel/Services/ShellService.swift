@@ -32,12 +32,26 @@ enum ShellError: LocalizedError {
         }
     }
 
+    var isBinaryNotFound: Bool {
+        switch self {
+        case .binaryNotFound: return true
+        default: return false
+        }
+    }
+
     static func isSystemNotRunningError(_ error: Error) -> Bool {
         if let shellError = error as? ShellError {
             return shellError.isSystemNotRunning
         }
         return error.localizedDescription.contains("XPC connection")
             || error.localizedDescription.contains("container system start")
+    }
+
+    static func isBinaryNotFoundError(_ error: Error) -> Bool {
+        if let shellError = error as? ShellError {
+            return shellError.isBinaryNotFound
+        }
+        return false
     }
 }
 

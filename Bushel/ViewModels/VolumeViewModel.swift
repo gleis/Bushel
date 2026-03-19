@@ -9,6 +9,7 @@ final class VolumeViewModel {
     var error: String?
     var showError = false
     var systemNotRunning = false
+    var binaryNotFound = false
 
     private let service = VolumeService()
 
@@ -17,8 +18,11 @@ final class VolumeViewModel {
         do {
             volumes = try await service.list()
             systemNotRunning = false
+            binaryNotFound = false
         } catch {
-            if ShellError.isSystemNotRunningError(error) {
+            if ShellError.isBinaryNotFoundError(error) {
+                binaryNotFound = true
+            } else if ShellError.isSystemNotRunningError(error) {
                 systemNotRunning = true
             } else {
                 self.error = error.localizedDescription

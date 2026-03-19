@@ -9,6 +9,7 @@ final class ImageViewModel {
     var error: String?
     var showError = false
     var systemNotRunning = false
+    var binaryNotFound = false
 
     // Pull progress
     var isPulling = false
@@ -27,8 +28,11 @@ final class ImageViewModel {
         do {
             images = try await service.list()
             systemNotRunning = false
+            binaryNotFound = false
         } catch {
-            if ShellError.isSystemNotRunningError(error) {
+            if ShellError.isBinaryNotFoundError(error) {
+                binaryNotFound = true
+            } else if ShellError.isSystemNotRunningError(error) {
                 systemNotRunning = true
             } else {
                 self.error = error.localizedDescription

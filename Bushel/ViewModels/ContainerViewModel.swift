@@ -11,6 +11,7 @@ final class ContainerViewModel {
     var error: String?
     var showError = false
     var systemNotRunning = false
+    var binaryNotFound = false
 
     // Log streaming
     var logLines: [(id: Int, text: String)] = []
@@ -45,8 +46,11 @@ final class ContainerViewModel {
         do {
             containers = try await service.listAll()
             systemNotRunning = false
+            binaryNotFound = false
         } catch {
-            if ShellError.isSystemNotRunningError(error) {
+            if ShellError.isBinaryNotFoundError(error) {
+                binaryNotFound = true
+            } else if ShellError.isSystemNotRunningError(error) {
                 systemNotRunning = true
             } else {
                 self.error = error.localizedDescription

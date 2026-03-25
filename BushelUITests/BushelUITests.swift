@@ -1,10 +1,3 @@
-//
-//  BushelUITests.swift
-//  BushelUITests
-//
-//  Created by Michael Gleissner on 3/17/26.
-//
-
 import XCTest
 
 final class BushelUITests: XCTestCase {

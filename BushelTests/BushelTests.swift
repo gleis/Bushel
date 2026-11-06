@@ -44,4 +44,16 @@ struct BushelTests {
         #expect(try JSONDecoder().decode(ContainerEntry.self, from: legacy).status == .running)
         #expect(try JSONDecoder().decode(ContainerEntry.self, from: current).status == .stopping)
     }
+    @Test func shellDrainsLargeOutputAndValidatesVersion() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let binary = directory.appendingPathComponent("container")
+        let script = "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'container CLI version 1.6.1'; else /usr/bin/awk 'BEGIN { for(i=0;i<20000;i++) print \"fixture output line\" }'; fi\n"
+        try script.write(to: binary, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: binary.path)
+        let shell = ShellService(binaryPath: binary.path)
+        let output = try await shell.run(["list"])
+        #expect(output.split(separator: "\n").count == 20000)
+    }
 }

@@ -80,7 +80,9 @@ enum ShellError: LocalizedError {
 actor ShellService {
     static let shared = ShellService()
 
-    private var binaryPath: String { containerBinaryPath }
+    private let binaryOverride: String?
+    init(binaryPath: String? = nil) { self.binaryOverride = binaryPath }
+    private var binaryPath: String { binaryOverride ?? containerBinaryPath }
 
     private var validatedBinaryPath: String?
 
@@ -107,27 +109,35 @@ actor ShellService {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        let stdout = OutputCapture()
+        let stderr = OutputCapture()
+        let readers = DispatchGroup()
+        readers.enter()
+        readers.enter()
         return try await withCheckedThrowingContinuation { continuation in
             process.terminationHandler = { _ in
-                let stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-                let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-                let stdout = String(data: stdoutData, encoding: .utf8) ?? ""
-                let stderr = String(data: stderrData, encoding: .utf8) ?? ""
-
-                if process.terminationStatus == 0 {
-                    continuation.resume(returning: stdout)
-                } else {
-                    continuation.resume(throwing: ShellError.commandFailed(
-                        command: "container \(arguments.joined(separator: " "))",
-                        exitCode: process.terminationStatus,
-                        stderr: stderr
-                    ))
+                readers.notify(queue: .global()) {
+                    if process.terminationStatus == 0 {
+                        continuation.resume(returning: stdout.text)
+                    } else {
+                        continuation.resume(throwing: ShellError.commandFailed(
+                            command: "container \(arguments.joined(separator: " "))",
+                            exitCode: process.terminationStatus, stderr: stderr.text))
+                    }
                 }
             }
-
             do {
                 try process.run()
+                DispatchQueue.global().async {
+                    stdout.store(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+                    readers.leave()
+                }
+                DispatchQueue.global().async {
+                    stderr.store(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+                    readers.leave()
+                }
             } catch {
+                process.terminationHandler = nil
                 continuation.resume(throwing: ShellError.binaryNotFound(path: binaryPath))
             }
         }
@@ -218,4 +228,12 @@ actor ShellService {
     func execute(_ arguments: [String]) async throws {
         _ = try await run(arguments)
     }
+}
+
+/// Synchronizes the two pipe-draining workers with the termination callback.
+private final class OutputCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+    func store(_ value: Data) { lock.lock(); data = value; lock.unlock() }
+    var text: String { lock.lock(); defer { lock.unlock() }; return String(data: data, encoding: .utf8) ?? "" }
 }

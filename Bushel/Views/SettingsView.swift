@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @AppStorage("containerBinaryPath") private var binaryPath = "/usr/local/bin/container"
+    @AppStorage("containerBinaryPath") private var binaryPath = ""
 
     var body: some View {
         Form {
@@ -24,7 +24,7 @@ struct SettingsView: View {
                     }
                 }
 
-                let exists = FileManager.default.isExecutableFile(atPath: binaryPath)
+                let exists = FileManager.default.isExecutableFile(atPath: containerBinaryPath)
                 if !exists {
                     Label("Binary not found at this path", systemImage: "exclamationmark.triangle.fill")
                         .foregroundStyle(.red)
@@ -32,11 +32,11 @@ struct SettingsView: View {
                 }
 
                 Button("Reset to Default") {
-                    binaryPath = "/usr/local/bin/container"
+                    binaryPath = ""
                 }
                 .controlSize(.small)
 
-                Text("Path to the Apple container CLI binary. Default: /usr/local/bin/container")
+                Text("Path to the Apple container CLI binary. Empty: discover from PATH, /opt/homebrew/bin, /usr/local/bin")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

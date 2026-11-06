@@ -12,8 +12,9 @@ It provides a desktop UI for:
 
 ## Requirements
 
-- macOS with Xcode installed
-- Apple container CLI installed and available locally
+- Apple Silicon Mac running macOS 26.0 or later (Intel is unsupported)
+- Xcode 26 or later
+- Apple container CLI 1.x installed and available locally
 - A machine that can run the checked-in deployment target in the Xcode project
 
 Install the CLI with:
@@ -32,8 +33,8 @@ brew install container
 Notes:
 
 - The project does not assume a specific local signing setup. Configure signing for your own machine in Xcode before building for the first time.
-- The default CLI path in the app is `/usr/local/bin/container`.
-- The current Xcode project targets macOS `26.2`.
+- The CLI is discovered from PATH, `/opt/homebrew/bin`, and `/usr/local/bin`. An explicit Settings path overrides discovery.
+- The current Xcode project targets macOS `26.0`.
 
 ## Project Layout
 
@@ -53,10 +54,18 @@ Bushel shells out to the Apple `container` binary rather than embedding a custom
 
 - The app structure is cleanly split by model, service, view model, and view.
 - Interactive container management is implemented across all major resource types.
-- Tests are mostly template stubs today and do not yet validate core behavior.
+- Unit tests cover CLI discovery/version policy and legacy/current resource JSON decoding.
 
 ## Development Notes
 
 - The CLI binary path is user-configurable in `Bushel/Views/SettingsView.swift`.
 - Most container operations are routed through `Bushel/Services/ShellService.swift`.
-- A bundled spec document is present at `mac_container_manager_spec.pdf`.
+- `mac_container_manager_spec.pdf` is the original March 2026 specification; CLI 1.x behavior supersedes it.
+
+## CLI 1.x compatibility
+
+The CLI path is checked on first command and 0.x/2.x versions produce a clear error. The 1.6.1 source shapes are covered by fixtures for status, images, volumes, and networks. Container list/inspect accepts both legacy string status and current nested runtime status. Missing optional volume size is displayed as Unknown. System status uses JSON where supported, with a legacy text fallback. Invalid CLI paths/unsupported versions are surfaced instead of an empty stopped-state screen.
+
+Verification used the upstream 1.6.1 source and extracted command help without replacing or starting the installed daemon. Live start/stop/exec/build with a 1.6.1 daemon still requires a dedicated test environment. The bundle identifier is `com.kazobe.Bushel`; Developer ID signing/notarization is required before distributing a DMG.
+
+For release preparation, build the app and run `scripts/sign-notarize.sh /path/to/Bushel.app` with `DEVELOPER_ID_APPLICATION` and an existing `NOTARYTOOL_PROFILE`. The script verifies signatures, submits the DMG, waits for notarization, staples the ticket, and assesses the finished image. No signing identity or credentials are stored in the repository.

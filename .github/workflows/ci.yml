@@ -1,0 +1,10 @@
+name: macOS CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build-test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcodebuild -project Bushel.xcodeproj -scheme Bushel -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test -only-testing:BushelTests

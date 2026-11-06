@@ -5,11 +5,19 @@ struct SystemService: Sendable {
 
     func status() async throws -> SystemStatus {
         do {
-            let output = try await shell.run(["system", "status"])
-            return parseStatus(output)
-        } catch is ShellError {
+            do {
+                let output = try await shell.run(["system", "status", "--format", "json"])
+                return try Self.decodeStatus(Data(output.utf8))
+            } catch let error as ShellError {
+                if case .commandFailed(_, _, let stderr) = error,
+                    stderr.contains("Unknown option") || stderr.contains("unknown option") {
+                    return parseStatus(try await shell.run(["system", "status"]))
+                }
+                throw error
+            }
+        } catch let error as ShellError where error.isSystemNotRunning {
             // "system status" exits with code 1 when the system is stopped;
-            // treat any failure as "not running"
+            // treat only the stopped-system diagnostic as "not running"
             return SystemStatus(isRunning: false, version: "", commit: "", dataRoot: "", installRoot: "")
         }
     }
@@ -24,6 +32,20 @@ struct SystemService: Sendable {
 
     func stop() async throws {
         try await shell.execute(["system", "stop"])
+    }
+
+    static func decodeStatus(_ data: Data) throws -> SystemStatus {
+        struct Version: Decodable { let version: String; let commit: String }
+        struct Paths: Decodable { let appRoot: String; let installRoot: String }
+        struct Payload: Decodable {
+            let status: String
+            let server: Version?
+            let paths: Paths?
+        }
+        let payload = try JSONDecoder().decode(Payload.self, from: data)
+        return SystemStatus(isRunning: payload.status == "running",
+            version: payload.server?.version ?? "", commit: payload.server?.commit ?? "",
+            dataRoot: payload.paths?.appRoot ?? "", installRoot: payload.paths?.installRoot ?? "")
     }
 
     private func parseStatus(_ text: String) -> SystemStatus {

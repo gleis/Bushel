@@ -74,12 +74,29 @@ struct ContainerEntry: Codable, Identifiable, Sendable {
     let networks: [AnyCodable]
     let status: ContainerStatus
 
+    private enum CodingKeys: String, CodingKey { case configuration, networks, status }
+    private struct StatusPayload: Decodable { let state: ContainerStatus; let networks: [AnyCodable] }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        configuration = try c.decode(ContainerConfiguration.self, forKey: .configuration)
+        if let legacy = try? c.decode(ContainerStatus.self, forKey: .status) {
+            status = legacy
+            networks = try c.decodeIfPresent([AnyCodable].self, forKey: .networks) ?? []
+        } else {
+            let current = try c.decode(StatusPayload.self, forKey: .status)
+            status = current.state
+            networks = current.networks
+        }
+    }
+
     var id: String { configuration.id }
 }
 
 enum ContainerStatus: String, Codable, Sendable {
     case running
     case stopped
+    case stopping
+    case unknown
 }
 
 struct ContainerConfiguration: Codable, Sendable {
@@ -99,6 +116,27 @@ struct ContainerConfiguration: Codable, Sendable {
     let virtualization: Bool
     let sysctls: [String: String]
     let labels: [String: String]
+    private enum CodingKeys: String, CodingKey { case id, image, resources, publishedPorts, publishedSockets, mounts, dns, networks, initProcess, platform, runtimeHandler, ssh, rosetta, virtualization, sysctls, labels }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        image = try c.decode(ContainerImageRef.self, forKey: .image)
+        resources = try c.decode(ContainerResources.self, forKey: .resources)
+        publishedPorts = try c.decodeIfPresent([PublishedPort].self, forKey: .publishedPorts) ?? []
+        publishedSockets = try c.decodeIfPresent([AnyCodable].self, forKey: .publishedSockets) ?? []
+        mounts = try c.decodeIfPresent([ContainerMount].self, forKey: .mounts) ?? []
+        dns = try c.decodeIfPresent(ContainerDNS.self, forKey: .dns) ?? ContainerDNS(nameservers: [], searchDomains: [], options: [], domain: nil)
+        networks = try c.decodeIfPresent([ContainerNetworkConfig].self, forKey: .networks) ?? []
+        initProcess = try c.decode(InitProcess.self, forKey: .initProcess)
+        platform = try c.decode(Platform.self, forKey: .platform)
+        runtimeHandler = try c.decodeIfPresent(String.self, forKey: .runtimeHandler) ?? "container-runtime-linux"
+        ssh = try c.decodeIfPresent(Bool.self, forKey: .ssh) ?? false
+        rosetta = try c.decodeIfPresent(Bool.self, forKey: .rosetta) ?? false
+        virtualization = try c.decodeIfPresent(Bool.self, forKey: .virtualization) ?? false
+        sysctls = try c.decodeIfPresent([String: String].self, forKey: .sysctls) ?? [:]
+        labels = try c.decodeIfPresent([String: String].self, forKey: .labels) ?? [:]
+    }
+
 }
 
 struct ContainerImageRef: Codable, Sendable {

@@ -1,20 +1,42 @@
 import Foundation
 
-/// Resolve the Apple container CLI binary path from user preferences.
+/// Explicit settings override wins; otherwise resolve GUI-safe PATH and common installs.
+nonisolated func resolveContainerBinaryPath(
+    override: String?, searchPath: String,
+    isExecutable: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+) -> String {
+    if let override, !override.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return override
+    }
+    let directories = searchPath.split(separator: ":").map(String.init)
+        + ["/opt/homebrew/bin", "/usr/local/bin"]
+    return directories.map { $0 + "/container" }.first(where: isExecutable)
+        ?? "/usr/local/bin/container"
+}
+
 nonisolated(unsafe) var containerBinaryPath: String {
-    let path = UserDefaults.standard.string(forKey: "containerBinaryPath") ?? "/usr/local/bin/container"
-    return path.isEmpty ? "/usr/local/bin/container" : path
+    resolveContainerBinaryPath(
+        override: UserDefaults.standard.string(forKey: "containerBinaryPath"),
+        searchPath: ProcessInfo.processInfo.environment["PATH"] ?? ""
+    )
+}
+
+nonisolated func isSupportedContainerVersion(_ output: String) -> Bool {
+    output.range(of: #"\b(?:version\s+)?1\.\d+\.\d+\b"#, options: .regularExpression) != nil
 }
 
 enum ShellError: LocalizedError {
     case commandFailed(command: String, exitCode: Int32, stderr: String)
     case binaryNotFound(path: String)
+    case unsupportedVersion(String)
     case decodingFailed(command: String, error: Error)
 
     var errorDescription: String? {
         switch self {
         case .commandFailed(_, _, let stderr):
             return stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .unsupportedVersion(let output):
+            return "Bushel requires Apple container 1.x. Found: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
         case .binaryNotFound(let path):
             return "Container CLI not found at \(path). Install it with: brew install container"
         case .decodingFailed(let cmd, let error):
@@ -60,8 +82,22 @@ actor ShellService {
 
     private var binaryPath: String { containerBinaryPath }
 
-    /// Execute a command and return stdout as a String.
+    private var validatedBinaryPath: String?
+
     func run(_ arguments: [String]) async throws -> String {
+        let resolved = binaryPath
+        if validatedBinaryPath != resolved {
+            let version = try await runUnchecked(["--version"])
+            guard isSupportedContainerVersion(version) else {
+                throw ShellError.unsupportedVersion(version)
+            }
+            validatedBinaryPath = resolved
+        }
+        return try await runUnchecked(arguments)
+    }
+
+    /// Execute a command and return stdout as a String.
+    private func runUnchecked(_ arguments: [String]) async throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: binaryPath)
         process.arguments = arguments

@@ -6,5 +6,5 @@ jobs:
   build-test:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: xcodebuild -project Bushel.xcodeproj -scheme Bushel -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO test -only-testing:BushelTests

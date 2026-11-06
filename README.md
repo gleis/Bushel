@@ -69,3 +69,10 @@ The CLI path is checked on first command and 0.x/2.x versions produce a clear er
 Verification used the upstream 1.6.1 source and extracted command help without replacing or starting the installed daemon. Live start/stop/exec/build with a 1.6.1 daemon still requires a dedicated test environment. The bundle identifier is `com.kazobe.Bushel`; Developer ID signing/notarization is required before distributing a DMG.
 
 For release preparation, build the app and run `scripts/sign-notarize.sh /path/to/Bushel.app` with `DEVELOPER_ID_APPLICATION` and an existing `NOTARYTOOL_PROFILE`. The script verifies signatures, submits the DMG, waits for notarization, staples the ticket, and assesses the finished image. No signing identity or credentials are stored in the repository.
+
+A repeatable command-surface audit is available in `scripts/audit-cli-help.py`.
+Pass `--binary /path/to/extracted/container`, `--build-plugin /path/to/extracted/build`,
+and `--output /tmp/container-help-audit.json`. It checks all 26 command surfaces
+and their used flags without starting a daemon or executing container operations.
+The extracted official 1.6.1 tools passed this audit. This does not replace a live
+VM/container lifecycle rehearsal on a dedicated 1.6.1 host.
